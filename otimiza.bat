@@ -1,115 +1,134 @@
 @echo off
-setlocal EnableExtensions
-title Windows 11 - Advanced Cleanup
+setlocal EnableExtensions DisableDelayedExpansion
+title Mysthic Aura - Windows 11
 color 0B
 chcp 65001 >nul
-mode con: cols=90 lines=35
-fltmc >nul 2>&1
-if errorlevel 1 (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-    exit /b
-)
-echo.
-echo ==========================================================
-echo              WINDOWS 11 - ADVANCED CLEANUP
-echo ==========================================================
-echo.
-echo Esta rotina limpa arquivos temporarios e caches.
-echo Feche os navegadores e os programas abertos.
-echo.
-choice /c SN /n /m "Iniciar a limpeza? [S/N]: "
-if errorlevel 2 exit /b 0
-echo.
-echo [1/12] Limpando temporarios do usuario...
-if defined TEMP if exist "%TEMP%\" (
-    del /f /s /q "%TEMP%\*" >nul 2>&1
-    for /d %%D in ("%TEMP%\*") do rd /s /q "%%D" >nul 2>&1
-)
-echo [2/12] Limpando temporarios do Windows...
-if exist "%SystemRoot%\Temp\" (
-    del /f /s /q "%SystemRoot%\Temp\*" >nul 2>&1
-    for /d %%D in ("%SystemRoot%\Temp\*") do rd /s /q "%%D" >nul 2>&1
-)
-echo [3/12] Limpando caches de miniaturas...
-del /f /q "%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db" >nul 2>&1
-echo [4/12] Limpando caches graficos...
-if exist "%LocalAppData%\D3DSCache\" (
-    del /f /s /q "%LocalAppData%\D3DSCache\*" >nul 2>&1
-    for /d %%D in ("%LocalAppData%\D3DSCache\*") do rd /s /q "%%D" >nul 2>&1
-)
-echo [5/12] Limpando relatorios de erros...
-for %%P in (
-    "%ProgramData%\Microsoft\Windows\WER\ReportArchive"
-    "%ProgramData%\Microsoft\Windows\WER\ReportQueue"
-    "%LocalAppData%\Microsoft\Windows\WER\ReportArchive"
-    "%LocalAppData%\Microsoft\Windows\WER\ReportQueue"
-) do (
-    if exist "%%~P\" (
-        del /f /s /q "%%~P\*" >nul 2>&1
-        for /d %%D in ("%%~P\*") do rd /s /q "%%D" >nul 2>&1
-    )
-)
-echo [6/12] Limpando caches de navegadores...
-for %%P in (
-    "%LocalAppData%\Google\Chrome\User Data\Default\Cache"
-    "%LocalAppData%\Google\Chrome\User Data\Default\Code Cache"
-    "%LocalAppData%\Microsoft\Edge\User Data\Default\Cache"
-    "%LocalAppData%\Microsoft\Edge\User Data\Default\Code Cache"
-    "%LocalAppData%\BraveSoftware\Brave-Browser\User Data\Default\Cache"
-    "%LocalAppData%\BraveSoftware\Brave-Browser\User Data\Default\Code Cache"
-) do (
-    if exist "%%~P\" (
-        del /f /s /q "%%~P\*" >nul 2>&1
-        for /d %%D in ("%%~P\*") do rd /s /q "%%D" >nul 2>&1
-    )
-)
-echo [7/12] Limpando cache de downloads do Windows Update...
+mode con: cols=90 lines=38
+cd /d "%~dp0"
+set "LOG=%~dp0Mysthic_Cleanup.log"
+set "FAIL=0"
 set "WAS_WUA=0"
 set "WAS_BITS=0"
+fltmc >nul 2>&1
+if errorlevel 1 (
+    echo Solicitando permissao de administrador...
+    powershell -NoProfile -Command "try { Start-Process -FilePath $env:ComSpec -ArgumentList @('/k',('""{0}""' -f '%~f0')) -Verb RunAs; exit 0 } catch { exit 1 }"
+    if errorlevel 1 (
+        echo.
+        echo Nao foi possivel abrir como administrador.
+        pause
+        exit /b 1
+    )
+    exit /b 0
+)
+> "%LOG%" echo Mysthic Cleanup - Inicio: %date% %time%
+cls
+echo.
+echo ==========================================================
+echo              WINDOWS 11 - MYSTHIC CLEANUP
+echo ==========================================================
+echo.
+echo Log: "%LOG%"
+echo.
+echo A rotina limpa caches e arquivos temporarios.
+echo Feche os navegadores e os programas abertos.
+echo.
+choice /c SN /n /m "Deseja iniciar? [S/N]: "
+if errorlevel 2 goto :CANCEL
+echo.
+echo [1/10] Temporarios do usuario...
+call :CLEAN "%TEMP%"
+echo [2/10] Temporarios do Windows...
+call :CLEAN "%SystemRoot%\Temp"
+echo [3/10] Cache de miniaturas...
+del /f /q "%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db" >>"%LOG%" 2>&1
+echo [4/10] Cache de shaders...
+call :CLEAN "%LocalAppData%\D3DSCache"
+echo [5/10] Relatorios de erros...
+call :CLEAN "%ProgramData%\Microsoft\Windows\WER\ReportArchive"
+call :CLEAN "%ProgramData%\Microsoft\Windows\WER\ReportQueue"
+call :CLEAN "%LocalAppData%\Microsoft\Windows\WER\ReportArchive"
+call :CLEAN "%LocalAppData%\Microsoft\Windows\WER\ReportQueue"
+echo [6/10] Caches de navegadores...
+call :CLEAN "%LocalAppData%\Google\Chrome\User Data\Default\Cache"
+call :CLEAN "%LocalAppData%\Google\Chrome\User Data\Default\Code Cache"
+call :CLEAN "%LocalAppData%\Microsoft\Edge\User Data\Default\Cache"
+call :CLEAN "%LocalAppData%\Microsoft\Edge\User Data\Default\Code Cache"
+call :CLEAN "%LocalAppData%\BraveSoftware\Brave-Browser\User Data\Default\Cache"
+call :CLEAN "%LocalAppData%\BraveSoftware\Brave-Browser\User Data\Default\Code Cache"
+echo [7/10] Cache do Windows Update...
 sc query wuauserv | findstr /i "RUNNING" >nul && set "WAS_WUA=1"
 sc query bits | findstr /i "RUNNING" >nul && set "WAS_BITS=1"
-if exist "%SystemRoot%\SoftwareDistribution\Download\" (
-    net stop bits >nul 2>&1
-    net stop wuauserv >nul 2>&1
-    del /f /s /q "%SystemRoot%\SoftwareDistribution\Download\*" >nul 2>&1
-    for /d %%D in ("%SystemRoot%\SoftwareDistribution\Download\*") do rd /s /q "%%D" >nul 2>&1
-    if "%WAS_WUA%"=="1" net start wuauserv >nul 2>&1
-    if "%WAS_BITS%"=="1" net start bits >nul 2>&1
+net stop bits >>"%LOG%" 2>&1
+net stop wuauserv >>"%LOG%" 2>&1
+call :CLEAN "%SystemRoot%\SoftwareDistribution\Download"
+if "%WAS_WUA%"=="1" net start wuauserv >>"%LOG%" 2>&1
+if "%WAS_BITS%"=="1" net start bits >>"%LOG%" 2>&1
+echo [8/10] Cache de entrega...
+call :CLEAN "%SystemRoot%\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"
+echo [9/10] Despejos de falhas...
+if exist "%LocalAppData%\CrashDumps\" (
+    del /f /q "%LocalAppData%\CrashDumps\*.dmp" >>"%LOG%" 2>&1
 )
-echo [8/12] Limpando cache de otimizacao de entrega...
-set "DOCACHE=%SystemRoot%\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache"
-if exist "%DOCACHE%\" (
-    del /f /s /q "%DOCACHE%\*" >nul 2>&1
-    for /d %%D in ("%DOCACHE%\*") do rd /s /q "%%D" >nul 2>&1
-)
-echo [9/12] Limpando despejos de falhas...
-if exist "%LocalAppData%\CrashDumps\" del /f /q "%LocalAppData%\CrashDumps\*.dmp" >nul 2>&1
-echo [10/12] Esvaziando a Lixeira...
-powershell -NoProfile -Command "Clear-RecycleBin -Force -ErrorAction SilentlyContinue" >nul 2>&1
-echo [11/12] Atualizando o cache DNS...
-ipconfig /flushdns >nul 2>&1
-echo [12/12] Executando limpeza de componentes...
+echo [10/10] DNS e componentes do Windows...
+ipconfig /flushdns >>"%LOG%" 2>&1
+if errorlevel 1 set "FAIL=1"
 DISM /Online /Cleanup-Image /StartComponentCleanup
+if errorlevel 1 (
+    set "FAIL=1"
+    echo DISM retornou um erro.>>"%LOG%"
+)
+echo.
+echo Esvaziando a Lixeira...
+powershell -NoProfile -Command "Clear-RecycleBin -Force -ErrorAction SilentlyContinue" >>"%LOG%" 2>&1
+goto :FINISH
+:CLEAN
+if not exist "%~1\" exit /b 0
+del /f /s /q "%~1\*" >>"%LOG%" 2>&1
+for /d %%D in ("%~1\*") do (
+    if exist "%%~fD\" rd /s /q "%%~fD" >>"%LOG%" 2>&1
+)
+exit /b 0
+:CANCEL
+echo.
+echo Operacao cancelada.
+goto :END
+:FINISH
+echo.>>"%LOG%"
+echo Finalizado: %date% %time%>>"%LOG%"
 echo.
 echo ==========================================================
-echo                  LIMPEZA CONCLUIDA
+if "%FAIL%"=="0" (
+    echo                    ROTINA FINALIZADA
+) else (
+    echo               ROTINA FINALIZADA COM AVISOS
+)
 echo ==========================================================
 echo.
-echo                 ___
-echo                /\__\
-echo               /::|  |
-echo              /:|:|  |
-echo             /:/|:|__|__
-echo            /:/ |::::\__\
-echo            \/__/~~/:/  /
-echo                  /:/  /
-echo                 /:/  /
-echo                /:/  /
-echo                \/__/
+echo Log salvo em:
+echo "%LOG%"
 echo.
-echo              By Mysthic_FøxX
+echo Reinicie o Windows se necessario.
+echo.
+echo              ___
+echo             /\__\
+echo            /::|  |
+echo           /:|:|  |
+echo          /:/|:|__|__
+echo         /:/ |::::\__\
+echo         \/__/~~/:/  /
+echo               /:/  /
+echo              /:/  /
+echo             /:/  /
+echo             \/__/
+echo.
+echo          By Mysthic_FøxX
 echo.
 echo ==========================================================
 echo.
-pause
+goto :END
+:END
+echo Pressione qualquer tecla para fechar...
+pause >nul
 endlocal
+exit /b
